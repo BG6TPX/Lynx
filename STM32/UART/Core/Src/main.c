@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "uart_bsp.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,7 +43,11 @@
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-
+/* Last counter values reported to the console, so the loop below only speaks
+   up when something actually goes wrong instead of once a second forever. */
+static uint32_t s_rx_dropped_reported;
+static uint32_t s_tx_dropped_reported;
+static uint32_t s_rx_errors_reported;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -56,6 +60,101 @@ static void MX_USART1_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+/* Set to 1 to run a TX->RX self-test at boot instead of the echo console.
+   PA9 (USART1_TX) must be wired to PA10 (USART1_RX) for it to pass. The echo
+   console is skipped in that mode on purpose: with the jumper fitted, its own
+   replies arrive back on RX and it would echo itself in circles. */
+#define UART_LOOPBACK_SELFTEST   0
+
+/* Minimal decimal printer. A full printf() would mean retargeting the C
+   library's _write()/_sys_write(), which is a lot of machinery for showing
+   three counters. */
+static void uart_put_u32(uint32_t value)
+{
+  char    digits[10];
+  uint8_t n = 0U;
+
+  if (value == 0U)
+  {
+    uart_putc((uint8_t)'0');
+    return;
+  }
+
+  while ((value > 0U) && (n < (uint8_t)sizeof(digits)))
+  {
+    digits[n] = (char)('0' + (value % 10U));
+    value /= 10U;
+    n++;
+  }
+
+  while (n > 0U)
+  {
+    n--;
+    uart_putc((uint8_t)digits[n]);
+  }
+}
+
+#if UART_LOOPBACK_SELFTEST
+/**
+  * @brief  Push two blocks of bytes out of TX and check they come back on RX.
+  * @note   Two rounds, because the second one wraps the ring buffer past the
+  *         end of its storage -- where an off-by-one in the wrap would hide.
+  * @retval 1 if every byte matched, 0 otherwise.
+  */
+static int uart_loopback_test(void)
+{
+  /* Deliberately smaller than UART_RX_BUFFER_SIZE - 1, so a single burst
+     cannot overflow the queue and be reported as a failure. */
+  uint8_t  tx_pattern[200];
+  uint8_t  rx_pattern[200];
+  uint32_t deadline;
+  uint16_t round;
+  uint16_t i;
+  int      ok = 1;
+
+  for (round = 0U; (round < 2U) && (ok != 0); round++)
+  {
+    for (i = 0U; i < (uint16_t)sizeof(tx_pattern); i++)
+    {
+      tx_pattern[i] = (uint8_t)(i + round);
+    }
+
+    uart_write(tx_pattern, (uint16_t)sizeof(tx_pattern));
+    uart_tx_flush();
+
+    /* The last byte reaches the receiver right as TC sets, so give the RX
+       interrupt a moment to land before judging the result. */
+    deadline = HAL_GetTick() + 50U;
+    while ((uart_available() < (uint16_t)sizeof(rx_pattern)) &&
+           ((int32_t)(HAL_GetTick() - deadline) < 0))
+    {
+    }
+
+    if (uart_available() != (uint16_t)sizeof(rx_pattern))
+    {
+      ok = 0;
+      break;
+    }
+    if (uart_read(rx_pattern, (uint16_t)sizeof(rx_pattern)) != (uint16_t)sizeof(rx_pattern))
+    {
+      ok = 0;
+      break;
+    }
+
+    for (i = 0U; i < (uint16_t)sizeof(rx_pattern); i++)
+    {
+      if (rx_pattern[i] != tx_pattern[i])
+      {
+        ok = 0;
+        break;
+      }
+    }
+  }
+
+  return ok;
+}
+#endif /* UART_LOOPBACK_SELFTEST */
 
 /* USER CODE END 0 */
 
@@ -90,7 +189,27 @@ int main(void)
   MX_GPIO_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
+  uart_bsp_init();
 
+#if UART_LOOPBACK_SELFTEST
+  if (uart_loopback_test() != 0)
+  {
+    uart_puts("\r\nloopback: PASS\r\n");
+  }
+  else
+  {
+    uart_puts("\r\nloopback: FAIL\r\n");
+  }
+
+  /* The jumper is still fitted, so the echo console below would receive its own
+     replies and echo them in circles. Park here rather than run it. */
+  while (1)
+  {
+  }
+#else
+  uart_puts("\r\nLynx UART ring buffer ready\r\n");
+  uart_puts("type a line and press enter\r\n");
+#endif
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -100,6 +219,45 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    char line[64];
+
+    /* timeout 0: poll the queue and return at once, so the loop never blocks. */
+    switch (uart_read_line(line, (uint16_t)sizeof(line), 0U))
+    {
+      case UART_LINE_OK:
+        uart_puts("echo: ");
+        uart_puts(line);
+        uart_puts("\r\n");
+        break;
+
+      case UART_LINE_OVERFLOW:
+        uart_puts("error: line too long, discarded\r\n");
+        break;
+
+      default:
+        break;   /* UART_LINE_TIMEOUT: nothing typed yet */
+    }
+
+    /* Only speak up when a counter moves. Climbing rx_dropped means the main
+       loop stalls too long between polls; climbing tx_dropped means the console
+       produces output faster than the line can carry it. */
+    if ((s_rx_dropped_reported != uart_rx_dropped()) ||
+        (s_tx_dropped_reported != uart_tx_dropped()) ||
+        (s_rx_errors_reported != uart_rx_errors()))
+    {
+      s_rx_dropped_reported = uart_rx_dropped();
+      s_tx_dropped_reported = uart_tx_dropped();
+      s_rx_errors_reported  = uart_rx_errors();
+
+      uart_puts("stats: rx_dropped=");
+      uart_put_u32(s_rx_dropped_reported);
+      uart_puts(" tx_dropped=");
+      uart_put_u32(s_tx_dropped_reported);
+      uart_puts(" rx_errors=");
+      uart_put_u32(s_rx_errors_reported);
+      uart_puts("\r\n");
+    }
+    /* USER CODE END 3 */
   }
   /* USER CODE END 3 */
 }

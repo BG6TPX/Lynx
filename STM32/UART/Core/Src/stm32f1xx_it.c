@@ -22,6 +22,7 @@
 #include "stm32f1xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "uart_bsp.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -204,9 +205,29 @@ void SysTick_Handler(void)
 void USART1_IRQHandler(void)
 {
   /* USER CODE BEGIN USART1_IRQn 0 */
-
+  uart_bsp_irq_handler();
   /* USER CODE END USART1_IRQn 0 */
-  HAL_UART_IRQHandler(&huart1);
+
+  /* ==========================================================================
+   * DO NOT RE-ENABLE THE HAL HANDLER BELOW.
+   *
+   * HAL_UART_IRQHandler(&huart1) must stay commented out. This project drives
+   * USART1 at register level and never starts a HAL_UART_Receive_IT() or
+   * HAL_UART_Transmit_IT() transfer, so huart1.RxState/gState are permanently
+   * READY. UART_Receive_IT()/UART_Transmit_IT() see that state, decide no
+   * transfer is in progress, and return HAL_BUSY *without touching DR*
+   * (stm32f1xx_hal_uart.c:3683 and :3557).
+   *
+   * RXNE/TXE then never clear, the NVIC line stays asserted, and the handler
+   * re-enters immediately and forever -- the main loop is starved and the
+   * board looks hung inside the interrupt, not merely deaf.
+   *
+   * CubeMX restores this line whenever the project is regenerated, so the
+   * comment above is the only thing standing between a regeneration and that
+   * livelock. Check it after every regeneration; uart_bsp.c has the details.
+   * ========================================================================== */
+  /* HAL_UART_IRQHandler(&huart1); */
+
   /* USER CODE BEGIN USART1_IRQn 1 */
 
   /* USER CODE END USART1_IRQn 1 */

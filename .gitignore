@@ -1,0 +1,42 @@
+# ---------------------------------------------------------------------------
+# Build output
+#
+# NOTE: .gitignore only applies to files git is not already tracking. The
+# copies that were committed before this file existed keep showing up as
+# modified every build until they are dropped from the index, e.g.
+#     git rm --cached STM32/UART/MDK-ARM/UART/UART.axf
+# ---------------------------------------------------------------------------
+
+# Keil MDK -- object, dependency and linker intermediates
+*.o
+*.d
+*.crf
+*.dep
+*.lnp
+*.sct
+
+# Keil MDK -- build products and reports
+*.axf
+*.hex
+*.bin
+*.elf
+*.map
+*.htm
+*.build_log.htm
+
+# Keil MDK -- per-user window layout and debugger state
+*.uvguix.*
+*.scvd
+*.iex
+*.lst
+
+# Keil MDK -- generated support folders (RTE_Components.h etc.)
+DebugConfig/
+RTE/
+
+# Editor / tool noise
+# The **/ prefix is required: a pattern containing "/" is anchored to the
+# directory holding this file, so ".vscode/*.log" would only match at the
+# repository root and miss MDK-ARM/.vscode/ further down.
+**/.vscode/*.log
+**/.vscode/*.lock
