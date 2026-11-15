@@ -1,0 +1,36 @@
+menu "Lynx Weather Station"
+
+    config LYNX_WIFI_SSID
+        string "WiFi SSID"
+        default "myssid"
+
+    config LYNX_WIFI_PASSWORD
+        string "WiFi Password"
+        default "mypassword"
+
+    config LYNX_MQTT_BROKER_URI
+        string "MQTT broker URI"
+        default "mqtt://broker.emqx.io"
+        help
+            mqtt://host[:port]，自建 broker 加 ssl:// 可走 8883 端口 TLS（需要再加证书配置）
+
+    config LYNX_MQTT_USERNAME
+        string "MQTT username (empty = anonymous)"
+        default ""
+
+    config LYNX_MQTT_PASSWORD
+        string "MQTT password"
+        default ""
+
+    config LYNX_REPORT_INTERVAL_MIN
+        int "Report interval (minutes)"
+        default 15
+        range 1 1440
+
+    config LYNX_DISABLE_DEEP_SLEEP
+        bool "Disable deep sleep (bench testing)"
+        default n
+        help
+            桌面联调时勾选：设备保持在线，每个上报周期循环工作，便于看日志和调 MQTT。
+            正式部署务必关闭此项（走深睡眠省电）。
+endmenu
