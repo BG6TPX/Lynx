@@ -130,7 +130,6 @@ static esp_err_t mqtt_start_and_wait(void)
             .authentication.password = CONFIG_LYNX_MQTT_PASSWORD,
         },
         .session.keepalive = 30,
-        .event_handle = mqtt_event_handler,
     };
     if (CONFIG_LYNX_MQTT_USERNAME[0] == '\0') {
         cfg.credentials.username = NULL;
@@ -141,6 +140,8 @@ static esp_err_t mqtt_start_and_wait(void)
 
     s_mqtt = esp_mqtt_client_init(&cfg);
     ESP_RETURN_ON_FALSE(s_mqtt != NULL, ESP_ERR_NO_MEM, TAG, "mqtt init");
+    /* v6 推荐的事件注册方式, 代替配置结构体里的 event_handle */
+    ESP_ERROR_CHECK(esp_mqtt_client_register_event(s_mqtt, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL));
     esp_mqtt_client_start(s_mqtt);
 
     /* 最多等 10 秒连上 broker */

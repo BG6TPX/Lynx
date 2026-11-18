@@ -1,0 +1,4 @@
+## ESP-IDF v6.x 起 MQTT 客户端不再是内置组件(旧名 esp-mqtt), 从组件仓库引入。
+## 组件管理器在首次 build 时会自动下载, 构建机需要联网。
+dependencies:
+  espressif/esp_mqtt: "*"
